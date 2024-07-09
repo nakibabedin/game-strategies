@@ -80,4 +80,7 @@ type t =
   }
 [@@deriving sexp_of, bin_io]
 
+
+
+
 val empty : Game_kind.t -> t
