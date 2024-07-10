@@ -257,17 +257,20 @@ module Exercises = struct
     return ()
   ;;
 
-  let heuristic_function ~(game : Game.t) ~(piece : Game.Piece.t) =
-    let opponent =
-      match piece with X -> Game.Piece.O | O -> Game.Piece.X
-    in
-    List.length (winning_moves ~me:piece game)
-    - List.length (moves_where_my_opponent_wins ~me:opponent game)
+  let heuristic_function_1 ~(game : Game.t) ~(piece : Game.Piece.t) =
+    (* ignore game; ignore piece; *)
+    match piece with
+    | X ->
+      List.length (winning_moves game ~me:X)
+      - List.length (winning_moves game ~me:O)
+    | O ->
+      List.length (winning_moves game ~me:O)
+      - List.length (winning_moves game ~me:X)
   ;;
 
   let rec minimax ~game ~depth ~piece ~maximizing_player =
     match equal depth 0 with
-    | true -> heuristic_function ~game ~piece
+    | true -> heuristic_function_1 ~game ~piece
     | false ->
       (match evaluate game with
        | Game_over result ->
@@ -313,22 +316,51 @@ module Exercises = struct
                    ~maximizing_player:(not maximizing_player)))))
   ;;
 
-  let best_next_move_minimax ~game ~piece =
-    let possible_next_moves = available_moves game in
-    let next_game_states =
-      List.map possible_next_moves ~f:(fun position ->
-        place_piece game ~piece ~position)
-    in
-    let order_of_best_moves =
-      List.sort next_game_states ~compare:(fun game_1 game_2 ->
-        Int.min
-          (minimax ~game:game_1 ~depth:3 ~piece ~maximizing_player:true)
-          (minimax ~game:game_2 ~depth:3 ~piece ~maximizing_player:true))
-    in
-    let next_move_opt = List.last order_of_best_moves in
-    match next_move_opt with
-    | None -> failwith "Game over, no moves left"
-    | Some move -> move
+  let is_empty_board ~(game : Game.t) =
+    let occupied_positions = Map.keys game.board in
+    Int.equal (List.length occupied_positions) 0
+  ;;
+
+  let best_next_move_minimax ~game ~piece : Game.Position.t =
+    match is_empty_board ~game with
+    | true -> { Game.Position.row = 1; column = 1 }
+    | false ->
+      let possible_next_moves =
+        match
+          List.length
+            (available_moves_that_do_not_immediately_lose ~me:piece game)
+        with
+        | 0 -> available_moves game
+        | _ -> available_moves_that_do_not_immediately_lose ~me:piece game
+      in
+      let next_game_states =
+        List.map possible_next_moves ~f:(fun position ->
+          position, place_piece game ~piece ~position)
+      in
+      let init_optimal_move =
+        Int.min_value, List.hd_exn possible_next_moves
+      in
+      let optimal_move =
+        List.fold
+          ~init:init_optimal_move
+          next_game_states
+          ~f:(fun optimal_move next_game_state ->
+            let curr_best_score, curr_best_move = optimal_move in
+            let possibly_better_pos, possibly_better_game =
+              next_game_state
+            in
+            let possibly_better_score =
+              minimax
+                ~game:possibly_better_game
+                ~depth:9
+                ~piece:O
+                ~maximizing_player:false
+            in
+            match Int.(possibly_better_score > curr_best_score) with
+            | true -> possibly_better_score, possibly_better_pos
+            | false -> curr_best_score, curr_best_move)
+      in
+      snd optimal_move
   ;;
 
   let exercise_one =
@@ -378,15 +410,15 @@ module Exercises = struct
 
      ;; *)
 
-  let%expect_test "exercise_six" =
-    print_game non_win;
-    printf "\n\n";
-    let best_move = best_next_move_minimax ~piece:O ~game:non_win in
-    (* print_s [%sexp (winning_moves : Game.t)]; *)
-    print_game best_move;
-    [%expect {| |}];
-    return ()
-  ;;
+  (* let%expect_test "exercise_six" = print_game non_win; printf "\n\n"; let
+     best_move = best_next_move_minimax ~piece:O ~game:non_win in (* print_s
+     [%sexp (winning_moves : Game.t)]; *)
+
+     (* List.iter next_moves ~f:( fun next_move_game -> print_game
+     next_move_game; printf "\n%d " (minimax ~game:next_move_game ~depth:1
+     ~piece:O ~maximizing_player:false); printf "\n\n"; ); *) let
+     best_next_game_state = place_piece non_win ~piece:O ~position:best_move
+     in print_game best_next_game_state; [%expect {| |}]; return () ;; *)
 
   let exercise_three =
     Command.async
@@ -431,10 +463,15 @@ end
    ~version:0 ~bin_query:Echo.Query.bin_t ~bin_response:Echo.Response.bin_t
    ;; end *)
 
-let handle_rpc (_client : unit) (_query : Rpcs.Take_turn.Query.t) =
+let handle_rpc (_client : unit) (query : Rpcs.Take_turn.Query.t) =
+  let current_game : Game.t = query.game in
+  let current_piece = query.you_play in
+  let next_position =
+    Exercises.best_next_move_minimax ~game:current_game ~piece:current_piece
+  in
   let response =
-    { Rpcs.Take_turn.Response.piece = Game.Piece.of_string "X"
-    ; Rpcs.Take_turn.Response.position = { row = 0; column = 0 }
+    { Rpcs.Take_turn.Response.piece = current_piece
+    ; Rpcs.Take_turn.Response.position = next_position
     }
   in
   return response
