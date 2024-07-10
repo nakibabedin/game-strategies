@@ -257,8 +257,9 @@ module Exercises = struct
     return ()
   ;;
 
-  let heuristic_function_1 ~(game : Game.t) ~(piece : Game.Piece.t) =
-    (* ignore game; ignore piece; *)
+  let max_depth = 9
+
+  let _heuristic_function_1 ~(game : Game.t) ~(piece : Game.Piece.t) =
     match piece with
     | X ->
       List.length (winning_moves game ~me:X)
@@ -268,9 +269,47 @@ module Exercises = struct
       - List.length (winning_moves game ~me:X)
   ;;
 
+  let is_corner_position ~position =
+    match position with
+    | { Game.Position.row = 0; column = 0 }
+    | { Game.Position.row = 2; column = 2 }
+    | { Game.Position.row = 2; column = 0 }
+    | { Game.Position.row = 0; column = 2 } ->
+      true
+    | _ -> false
+  ;;
+
+  let _heuristic_function_2 ~(game : Game.t) ~(piece : Game.Piece.t) =
+    let score_part_1 =
+      50
+      *
+      match piece with
+      | X ->
+        List.length (winning_moves game ~me:X)
+        - List.length (winning_moves game ~me:O)
+      | O ->
+        List.length (winning_moves game ~me:O)
+        - List.length (winning_moves game ~me:X)
+    in
+    let occupied_positions = Map.keys game.board in
+    let my_piece_positions =
+      List.filter occupied_positions ~f:(fun position ->
+        let possible_piece = Map.find game.board position in
+        match possible_piece with
+        | Some other_piece -> Game.Piece.equal piece other_piece
+        | None -> false)
+    in
+    let my_corner_positions =
+      List.filter my_piece_positions ~f:(fun position ->
+        is_corner_position ~position)
+    in
+    let score_part_2 = 20 * List.length my_corner_positions in
+    score_part_1 + score_part_2
+  ;;
+
   let rec minimax ~game ~depth ~piece ~maximizing_player =
     match equal depth 0 with
-    | true -> heuristic_function_1 ~game ~piece
+    | true -> _heuristic_function_2 ~game ~piece
     | false ->
       (match evaluate game with
        | Game_over result ->
@@ -326,12 +365,15 @@ module Exercises = struct
     | true -> { Game.Position.row = 1; column = 1 }
     | false ->
       let possible_next_moves =
-        match
-          List.length
-            (available_moves_that_do_not_immediately_lose ~me:piece game)
-        with
-        | 0 -> available_moves game
-        | _ -> available_moves_that_do_not_immediately_lose ~me:piece game
+        match List.length (winning_moves ~me:piece game) with
+        | 0 ->
+          (match
+             List.length
+               (available_moves_that_do_not_immediately_lose ~me:piece game)
+           with
+           | 0 -> available_moves game
+           | _ -> available_moves_that_do_not_immediately_lose ~me:piece game)
+        | _ -> winning_moves ~me:piece game
       in
       let next_game_states =
         List.map possible_next_moves ~f:(fun position ->
@@ -352,7 +394,7 @@ module Exercises = struct
             let possibly_better_score =
               minimax
                 ~game:possibly_better_game
-                ~depth:9
+                ~depth:max_depth
                 ~piece:O
                 ~maximizing_player:false
             in
