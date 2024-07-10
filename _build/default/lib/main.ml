@@ -257,7 +257,7 @@ module Exercises = struct
     return ()
   ;;
 
-  let max_depth = 9
+  let max_depth = 10
 
   let _heuristic_function_1 ~(game : Game.t) ~(piece : Game.Piece.t) =
     match piece with
@@ -269,10 +269,11 @@ module Exercises = struct
       - List.length (winning_moves game ~me:X)
   ;;
 
-  let is_corner_position ~position =
+  let is_corner_position ~position ~(game : Game.t) =
+    let _n = Game.Game_kind.board_length game.game_kind - 1 in
     match position with
-    | { Game.Position.row = 0; column = 0 }
     | { Game.Position.row = 2; column = 2 }
+    | { Game.Position.row = 0; column = 0 }
     | { Game.Position.row = 2; column = 0 }
     | { Game.Position.row = 0; column = 2 } ->
       true
@@ -301,7 +302,7 @@ module Exercises = struct
     in
     let my_corner_positions =
       List.filter my_piece_positions ~f:(fun position ->
-        is_corner_position ~position)
+        is_corner_position ~game ~position)
     in
     let score_part_2 = 20 * List.length my_corner_positions in
     score_part_1 + score_part_2
