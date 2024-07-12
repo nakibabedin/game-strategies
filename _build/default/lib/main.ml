@@ -297,7 +297,7 @@ module Exercises = struct
     return ()
   ;;
 
-  let max_depth = 7
+  let max_depth = 1
 
   let _heuristic_function_1 ~(game : Game.t) ~(piece : Game.Piece.t) =
     match piece with
@@ -398,7 +398,7 @@ module Exercises = struct
           + check_for_n_consecutive ~game ~position ~n:3
           + check_for_n_consecutive ~game ~position ~n:4)
         in
-      bonus_for_consecutive + punish_for_consecutive
+      bonus_for_consecutive + (2*punish_for_consecutive)
   ;;
 
   let get_best_next_move_list ~game ~piece =
@@ -482,6 +482,8 @@ module Exercises = struct
 
   let rec alpha_beta ~game ~depth ~alpha ~beta ~piece ~maximizing_player = 
 
+    let temp = 
+
     match Int.equal depth 0 with 
     | true -> _heuristic_function_3 ~game ~piece
     | false -> 
@@ -499,42 +501,44 @@ module Exercises = struct
         let open_moves = available_moves game in
         (match maximizing_player with
         | true -> (
-          let value = (Int.min_value, beta) in
+          let value = (Int.min_value, alpha) in
 
-          let calculated_alpha_beta = List.fold_until open_moves ~init:value  ~finish:(fun acc -> acc) ~f:(fun value move ->
-              let curr_max_minimax, curr_beta = value in
+          let calculated_alpha_beta = List.fold_until open_moves ~init:value  ~finish:(fun acc -> acc) ~f:(fun acc_fold move ->
+              let curr_max_minimax, curr_alpha = acc_fold in
                 let new_game = place_piece game ~piece ~position:move in
                 
                 let next_max = Int.max
                   curr_max_minimax
-                  (alpha_beta ~game:new_game ~depth:(depth-1) ~alpha ~beta:curr_beta ~piece ~maximizing_player:(not maximizing_player)) in
+                  (alpha_beta ~game:new_game ~depth:(depth-1) ~alpha:curr_alpha ~beta ~piece ~maximizing_player:(not maximizing_player)) in
 
-                match next_max > curr_beta with 
-                | true -> Continue_or_stop.Stop value
-                | false -> Continue_or_stop.Continue (next_max, Int.max curr_beta next_max)
+                match next_max > beta with 
+                | true -> Continue_or_stop.Stop acc_fold
+                | false -> Continue_or_stop.Continue (next_max, Int.max curr_alpha next_max)
                 
           ) in fst calculated_alpha_beta )
 
           | false -> (
 
-          let value = (Int.max_value, alpha) in
+          let value = (Int.max_value, beta) in
 
-          let calculated_alpha_beta = List.fold_until open_moves ~init:value  ~finish:(fun acc -> acc) ~f:(fun value move ->
-            let curr_max_minimax, curr_alpha = value in
+          let calculated_alpha_beta = List.fold_until open_moves ~init:value  ~finish:(fun acc -> acc) ~f:(fun acc_fold move ->
+            let curr_min_minimax, curr_beta = acc_fold in
             let new_game = place_piece game ~piece ~position:move in
                 
-            let next_max = Int.max
-              curr_max_minimax
-              (alpha_beta ~game:new_game ~depth:(depth-1) ~alpha ~beta:curr_alpha ~piece ~maximizing_player:(not maximizing_player)) in
+            let next_min = Int.min
+              curr_min_minimax
+              (alpha_beta ~game:new_game ~depth:(depth-1) ~alpha ~beta:curr_beta ~piece ~maximizing_player:(not maximizing_player)) in
 
-                match next_max > curr_alpha with 
-                | true -> Continue_or_stop.Stop value
-                | false -> Continue_or_stop.Continue (next_max, Int.min curr_alpha next_max)
+                match next_min < alpha with 
+                | true -> Continue_or_stop.Stop acc_fold
+                | false -> Continue_or_stop.Continue (next_min, Int.min curr_beta next_min)
                 
           ) in fst calculated_alpha_beta )
 
 
-    ))
+    )) in
+
+    print_s [%message "" (temp:int)]; temp
 
   ;;
 
@@ -573,6 +577,7 @@ module Exercises = struct
       let init_optimal_move =
         Int.min_value, List.hd_exn possible_next_moves
       in
+      
       let optimal_move =
         List.fold
           ~init:init_optimal_move
@@ -585,7 +590,7 @@ module Exercises = struct
             let possibly_better_score =
               minimax
                 ~game:possibly_better_game
-                ~depth:max_depth
+                ~depth:9
                 ~piece
                 ~maximizing_player:false
             in
@@ -792,8 +797,15 @@ end
 let handle_rpc (_client : unit) (query : Rpcs.Take_turn.Query.t) =
   let current_game : Game.t = query.game in
   let current_piece = query.you_play in
+
+
+  (* Exercises.print_game current_game;
+  printf "%d\n" (Exercises.alpha_beta ~game:current_game ~depth:Exercises.max_depth ~piece:current_piece ~maximizing_player:true ~alpha:Int.min_value ~beta:Int.max_value); *)
+  
   let next_position =
-    Exercises.best_next_move_alpha_beta ~game:current_game ~piece:current_piece
+    match current_game.game_kind with 
+    | Omok -> Exercises.best_next_move_alpha_beta ~game:current_game ~piece:current_piece
+    | Tic_tac_toe -> Exercises.best_next_move_minimax ~game:current_game ~piece:current_piece
   in
   let response =
     { Rpcs.Take_turn.Response.piece = current_piece
