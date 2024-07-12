@@ -260,10 +260,19 @@ module Exercises = struct
     let bonus_diagonal =
       check_diagonal ~game ~position ~length_to_check_for:n
     in
+
+    let bonus_weight = 
+      match n with 
+      | 2 -> 1
+      | 3 -> 100
+      | 4 -> 1000
+      | _ -> 0
+    in 
+
     match bonus_row, bonus_col, bonus_diagonal with
-    | true, true, true -> Int.pow n 4
-    | true, true, _ | true, _, true | _, true, true -> Int.pow n 3
-    | true, _, _ | _, true, _ | _, _, true -> Int.pow n 2
+    | true, true, true -> 3 * bonus_weight
+    | true, true, _ | true, _, true | _, true, true -> 2 * bonus_weight
+    | true, _, _ | _, true, _ | _, _, true -> bonus_weight
     | _ -> 0
   ;;
 
@@ -288,7 +297,7 @@ module Exercises = struct
     return ()
   ;;
 
-  let max_depth = 9
+  let max_depth = 7
 
   let _heuristic_function_1 ~(game : Game.t) ~(piece : Game.Piece.t) =
     match piece with
@@ -361,26 +370,35 @@ module Exercises = struct
     match game.game_kind with
     | Game_kind.Tic_tac_toe -> _heuristic_function_2 ~game ~piece
     | Game_kind.Omok ->
-      let losing_move_punishment =
-        500
+      (* let losing_move_punishment =
+        10000
         *
-        match piece with
-        | X -> 0 - List.length (winning_moves game ~me:O)
-        | O -> 0 - List.length (winning_moves game ~me:X)
-      in
+        (0 - List.length (winning_moves game ~me:(Game.Piece.flip piece)))
+      in *)
       let occupied_positions = Map.keys game.board in
       let my_piece_positions =
         List.filter occupied_positions ~f:(fun position ->
           Game.Piece.equal (Map.find_exn game.board position) piece)
       in
+      let opponent_piece_posiitons =
+        List.filter occupied_positions ~f:(fun position ->
+          Game.Piece.equal (Map.find_exn game.board position) (Game.Piece.flip piece))
+      in
       let bonus_for_consecutive =
         List.fold my_piece_positions ~init:0 ~f:(fun bonus_so_far position ->
           bonus_so_far
           + check_for_n_consecutive ~game ~position ~n:2
-          + check_for_n_consecutive ~game ~position ~n:2
-          + check_for_n_consecutive ~game ~position ~n:2)
+          + check_for_n_consecutive ~game ~position ~n:3
+          + check_for_n_consecutive ~game ~position ~n:4)
       in
-      bonus_for_consecutive + losing_move_punishment
+      let punish_for_consecutive = 
+        List.fold opponent_piece_posiitons ~init:0 ~f:(fun punish_so_far position ->
+          punish_so_far
+          + check_for_n_consecutive ~game ~position ~n:2
+          + check_for_n_consecutive ~game ~position ~n:3
+          + check_for_n_consecutive ~game ~position ~n:4)
+        in
+      bonus_for_consecutive + punish_for_consecutive
   ;;
 
   let get_best_next_move_list ~game ~piece =
@@ -400,10 +418,13 @@ module Exercises = struct
     | None -> failwith "no moves left"
   ;;
 
+  let _get_int_list_from_deferred (deferred_int_list : int list Deferred.t ) = 
+    let%bind non_deferred_list = deferred_int_list in
+    return non_deferred_list
+  ;;
+
   let rec minimax ~game ~depth ~piece ~maximizing_player =
 
-    (* print_s [%message "" (depth:int)]; *)
-    
     let temp = 
 
     match equal depth 0 with
@@ -459,6 +480,64 @@ module Exercises = struct
                   temp  
   ;;
 
+  let rec alpha_beta ~game ~depth ~alpha ~beta ~piece ~maximizing_player = 
+
+    match Int.equal depth 0 with 
+    | true -> _heuristic_function_3 ~game ~piece
+    | false -> 
+      (match evaluate game with
+       | Game_over result ->
+         (match result.winner with
+          | Some winning_piece ->
+            (match Game.Piece.equal piece winning_piece with
+             | true -> 100_000 + depth
+             | false -> -100_000 - depth)
+          | None -> 0)
+       | Illegal_move ->
+         raise_s [%message "This is an illegal move" (game : Game.t)]
+       | Game_continues -> 
+        let open_moves = available_moves game in
+        (match maximizing_player with
+        | true -> (
+          let value = (Int.min_value, beta) in
+
+          let calculated_alpha_beta = List.fold_until open_moves ~init:value  ~finish:(fun acc -> acc) ~f:(fun value move ->
+              let curr_max_minimax, curr_beta = value in
+                let new_game = place_piece game ~piece ~position:move in
+                
+                let next_max = Int.max
+                  curr_max_minimax
+                  (alpha_beta ~game:new_game ~depth:(depth-1) ~alpha ~beta:curr_beta ~piece ~maximizing_player:(not maximizing_player)) in
+
+                match next_max > curr_beta with 
+                | true -> Continue_or_stop.Stop value
+                | false -> Continue_or_stop.Continue (next_max, Int.max curr_beta next_max)
+                
+          ) in fst calculated_alpha_beta )
+
+          | false -> (
+
+          let value = (Int.max_value, alpha) in
+
+          let calculated_alpha_beta = List.fold_until open_moves ~init:value  ~finish:(fun acc -> acc) ~f:(fun value move ->
+            let curr_max_minimax, curr_alpha = value in
+            let new_game = place_piece game ~piece ~position:move in
+                
+            let next_max = Int.max
+              curr_max_minimax
+              (alpha_beta ~game:new_game ~depth:(depth-1) ~alpha ~beta:curr_alpha ~piece ~maximizing_player:(not maximizing_player)) in
+
+                match next_max > curr_alpha with 
+                | true -> Continue_or_stop.Stop value
+                | false -> Continue_or_stop.Continue (next_max, Int.min curr_alpha next_max)
+                
+          ) in fst calculated_alpha_beta )
+
+
+    ))
+
+  ;;
+
   let _is_empty_board ~(game : Game.t) =
     let occupied_positions = Map.keys game.board in
     Int.equal (List.length occupied_positions) 0
@@ -508,6 +587,52 @@ module Exercises = struct
                 ~game:possibly_better_game
                 ~depth:max_depth
                 ~piece
+                ~maximizing_player:false
+            in
+            match Int.(possibly_better_score > curr_best_score) with
+            | true -> possibly_better_score, possibly_better_pos
+            | false -> curr_best_score, curr_best_move)
+      in
+      snd optimal_move
+  ;;
+
+  let best_next_move_alpha_beta ~game ~piece : Game.Position.t =
+    (* match is_empty_board ~game with
+    | true -> { Game.Position.row = 1; column = 1 }
+    | false -> *)
+      let possible_next_moves =
+        get_best_next_move_list ~game ~piece
+        (* match List.length (winning_moves ~me:piece game) with | 0 ->
+           winning_moves ~me:piece game | _ -> (match List.length
+           (winning_moves ~me:(Game.Piece.flip piece) game) with | 0 ->
+           winning_moves ~me:(Game.Piece.flip piece) game | _ -> (match
+           List.length (available_moves_that_do_not_immediately_lose
+           ~me:piece game) with | 0 -> available_moves game | _ ->
+           available_moves_that_do_not_immediately_lose ~me:piece game)) *)
+      in
+      let next_game_states =
+        List.map possible_next_moves ~f:(fun position ->
+          position, place_piece game ~piece ~position)
+      in
+      let init_optimal_move =
+        Int.min_value, List.hd_exn possible_next_moves
+      in
+      let optimal_move =
+        List.fold
+          ~init:init_optimal_move
+          next_game_states
+          ~f:(fun optimal_move next_game_state ->
+            let curr_best_score, curr_best_move = optimal_move in
+            let possibly_better_pos, possibly_better_game =
+              next_game_state
+            in
+            let possibly_better_score =
+              alpha_beta
+                ~game:possibly_better_game
+                ~depth:max_depth
+                ~piece
+                ~alpha:Int.min_value
+                ~beta:Int.max_value
                 ~maximizing_player:false
             in
             match Int.(possibly_better_score > curr_best_score) with
@@ -668,7 +793,7 @@ let handle_rpc (_client : unit) (query : Rpcs.Take_turn.Query.t) =
   let current_game : Game.t = query.game in
   let current_piece = query.you_play in
   let next_position =
-    Exercises.best_next_move_minimax ~game:current_game ~piece:current_piece
+    Exercises.best_next_move_alpha_beta ~game:current_game ~piece:current_piece
   in
   let response =
     { Rpcs.Take_turn.Response.piece = current_piece
