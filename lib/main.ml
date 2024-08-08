@@ -36,6 +36,23 @@ module Exercises = struct
   ;;
 
   let print_game (game : Game.t) =
+
+    (* let occupied_positions_list = Map.keys game.board in *)
+
+    let board = List.init ( Game.Game_kind.board_length game.game_kind ) ~f:(fun row -> 
+        let _ = List.init (Game.Game_kind.board_length game.game_kind) ~f:(fun column -> 
+
+          match Map.find game.board {row=row;column=column} with
+          | Some piece -> printf "%s |" (Game.Piece.to_string piece);
+            Game.Piece.to_string piece ^ " |"
+          | None -> printf " |"; " |" 
+
+        ) in
+        printf "\n";
+        let _ = List.init ( Game.Game_kind.board_length game.game_kind ) ~f:(fun _ -> printf "-") in
+
+      ) 
+    in
     ignore game;
     print_endline ""
   ;;
@@ -160,20 +177,65 @@ module Exercises = struct
   ;;
 end
 
+(* module Echo = struct
+  module Query = struct
+    type t = string [@@deriving sexp_of, bin_io]
+  end
+
+  module Response = struct
+    type t = { time : Time_ns_unix.t ; message: String.t } [@@deriving sexp_of, bin_io]
+  end
+end
+
+
+module Rpcs = struct
+  let echo_rpc =
+    Rpc.Rpc.create
+      ~name:"echo ping"
+      ~version:0
+      ~bin_query:Echo.Query.bin_t
+      ~bin_response:Echo.Response.bin_t
+  ;;
+end *)
+
+let handle_rpc (_client : unit) (_query : Rpcs.Take_turn.Query.t) = 
+
+  let response = { Rpcs.Take_turn.Response.piece = Game.Piece.of_string "X"
+    ; Rpcs.Take_turn.Response.position = {row=0;column=0}
+    } in
+
+    return response
+  
+  ;;
+
+
 let command_play =
   Command.async
     ~summary:"Play"
     (let%map_open.Command () = return ()
-     and controller =
-       flag "-controller" (required host_and_port) ~doc:"_ host_and_port of controller"
+     (* and controller =
+       flag "-controller" (required host_and_port) ~doc:"_ host_and_port of controller" *)
      and port = flag "-port" (required int) ~doc:"_ port to listen on" in
-     fun () ->
-       (* We should start listing on the supplied [port], ready to handle incoming
-          queries for [Take_turn] and [Game_over]. We should also connect to the
-          controller and send a [Start_game] to initiate the game. *)
-       ignore controller;
-       ignore port;
-       return ())
+     fun () -> 
+      let%bind server =
+
+          let implementations =
+            Rpc.Implementations.create_exn
+              ~on_unknown_rpc:`Close_connection
+              ~implementations:[ Rpc.Rpc.implement Rpcs.Take_turn.rpc handle_rpc]
+          in
+        
+           Rpc.Connection.serve
+             ~implementations
+             ~initial_connection_state:(fun _client_identity _client_addr ->
+               (* This constructs the "client" values which are passed to the
+                  implementation function above. We're just using unit for now. *)
+               ())
+             ~where_to_listen:(Tcp.Where_to_listen.of_port port)
+             ()
+             in 
+            Tcp.Server.close_finished server)
+    
 ;;
 
 let command =
